@@ -155,7 +155,7 @@ static SERIAL_CONFIG ReadSerialConfig()
     HKEY hKey;
     SERIAL_CONFIG cfg;
     cfg.Serial = 0;
-    cfg.BaudRate = 9600;
+    cfg.BaudRate = 115200;
     cfg.WordLength = 8;
     cfg.StopBit = ONESTOPBIT;
     cfg.Parity = NOPARITY;
@@ -295,7 +295,7 @@ static void DoStreamToStream(TStream1& stream1, TStream2& stream2, std::vector<u
                             // Ctrl+X: 退出程序
                             if (ch == 24) // Ctrl+X
                             {
-                                if (MessageBoxW(NULL, L"确定要退出程序吗？", L"退出确认", MB_YESNO | MB_ICONQUESTION) == IDYES)
+                                // if (MessageBoxW(NULL, L"确定要退出程序吗？", L"退出确认", MB_YESNO | MB_ICONQUESTION) == IDYES)
                                 {
                                     g_shouldExit = true;
                                     // 通过取消所有异步操作来退出io_service
@@ -567,22 +567,8 @@ INT_PTR CALLBACK SettingFunc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPar
         }
 
         auto hWndBaudRate = GetDlgItem(hDlg, IDC_COMBO_SPEED);
-        ComboBox_AddString(hWndBaudRate, L"50"); 
-        ComboBox_AddString(hWndBaudRate, L"75");
-        ComboBox_AddString(hWndBaudRate, L"100");
-        ComboBox_AddString(hWndBaudRate, L"105");
-        ComboBox_AddString(hWndBaudRate, L"300");
-        ComboBox_AddString(hWndBaudRate, L"600");
-        ComboBox_AddString(hWndBaudRate, L"1200");
-        ComboBox_AddString(hWndBaudRate, L"2400");
-        ComboBox_AddString(hWndBaudRate, L"4800");
-        ComboBox_AddString(hWndBaudRate, L"9600");
-        ComboBox_AddString(hWndBaudRate, L"19200");
-        ComboBox_AddString(hWndBaudRate, L"38400");
-        ComboBox_AddString(hWndBaudRate, L"57600");
         ComboBox_AddString(hWndBaudRate, L"115200");
-        ComboBox_AddString(hWndBaudRate, L"128000");
-        ComboBox_AddString(hWndBaudRate, L"256000");
+        ComboBox_AddString(hWndBaudRate, L"1500000");
         ComboBox_SetText(hWndBaudRate, std::to_wstring(cfg.BaudRate).c_str());
 
         auto hWndWordLength = GetDlgItem(hDlg, IDC_COMBO_WORD);
