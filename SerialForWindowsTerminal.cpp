@@ -8,6 +8,12 @@
 #include <iostream>
 #include <boost/asio.hpp> 
 #include <boost/asio/windows/stream_handle.hpp>
+#include <setupapi.h>
+#include <cfgmgr32.h>
+#include <initguid.h>
+#include <devguid.h>
+
+#pragma comment(lib, "setupapi.lib")
 
 #define MAX_LOADSTRING 100
 
@@ -27,36 +33,32 @@ using PortsArray = std::vector<std::pair<std::wstring, int>>;
 static PortsArray GetAllPorts(void)
 {
     PortsArray ports;
-    HKEY hRegKey;
-    int nCount = 0;
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"Hardware\\DeviceMap\\SerialComm", 0, KEY_READ, &hRegKey) == ERROR_SUCCESS)
-    {
-        while (true)
-        {
-            TCHAR szName[MAX_PATH] = { 0 };
-            TCHAR szPort[MAX_PATH] = { 0 };
-            DWORD nValueSize = MAX_PATH - 1;
-            DWORD nDataSize = MAX_PATH - 1;
-            DWORD nType;
+    HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, nullptr, nullptr, DIGCF_PRESENT);
+    SP_DEVINFO_DATA devInfoData = { sizeof(SP_DEVINFO_DATA) };
 
-            if (::RegEnumValue(hRegKey, nCount, szName, &nValueSize, NULL, &nType, (LPBYTE)szPort, &nDataSize) == ERROR_NO_MORE_ITEMS)
-            {
-                break;
-            }
-            std::wstring name(szName);
-            auto idx = name.find_last_of('\\');
-            if (idx != name.npos)
-            {
-                name = name.substr(idx + 1);
-            }
-            name += L" (";
-            name += szPort;
-            name += L")";
-            ports.push_back(std::make_pair(name, (int)std::wcstoul(szPort + 3, nullptr, 10)));
-            nCount++;
-        }
-        ::RegCloseKey(hRegKey);
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
+        // 获取设备管理器显示的名字, 类似 "Silicon Labs CP210x USB to UART Bridge (COM3)"
+        wchar_t friendlyName[256] = {};
+        DWORD size = sizeof(friendlyName);
+
+        SetupDiGetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_FRIENDLYNAME, nullptr, (PBYTE)friendlyName, size, &size);
+
+        const wchar_t* p = wcsstr(friendlyName, L"(COM");
+
+        // 没找到 (COM
+        if (!p)
+            break;
+
+        // 从 "(COM" 后面开始扫描数字
+        int comNum = -1;
+        if (swscanf_s(p, L"(COM%d)", &comNum) != 1)
+            break;
+
+        ports.push_back(std::make_pair(friendlyName, comNum));
     }
+
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+
     return ports;
 }
 
@@ -488,7 +490,7 @@ int wmain(int argc, const WCHAR* args[])
                 }
 
                     // 显示当前编码格式
-                    std::cout << "\033[36mVersion: v1.0.0\033[0m" << std::endl;
+                    std::cout << "\033[36mVersion: v1.0.1\033[0m" << std::endl;
                     std::cout << "\033[32mConsole encoding: " << (cfg.EncodingFormat == 0 ? "UTF-8" : "GBK") << "\033[0m" << std::endl;
                     std::cout << "\033[32mEcho mode: " << (cfg.EchoMode == 0 ? "Off" : "On") << "\033[0m" << std::endl;
                     std::cout << "\033[33mPress Ctrl+A then Ctrl+C to toggle encoding format\033[0m" << std::endl;
