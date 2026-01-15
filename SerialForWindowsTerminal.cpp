@@ -277,23 +277,22 @@ static void DoStreamToStream(TStream1& stream1, TStream2& stream2, std::vector<u
                     for (size_t i = 0; i < bytes_transferred; i++)
                     {
                         uint8_t ch = buffer[i];
-                        
-                        // 检查Ctrl+A (ASCII 1)
-                        if (ch == 1)
+                        // 检查Ctrl+Q (ASCII 1)
+                        if (!g_isCtrlAPressed && ch == 'Q' - 'A' + 1)
                         {
                             g_isCtrlAPressed = true;
                             skipWrite = true;
                             break;
                         }
                         
-                        // 如果Ctrl+A已按下，检查后续按键
+                        // 如果Ctrl+Q已按下，检查后续按键
                         if (g_isCtrlAPressed)
                         {
                             g_isCtrlAPressed = false; // 重置标志
                             skipWrite = true;
                             
                             // Ctrl+X: 退出程序
-                            if (ch == 24) // Ctrl+X
+                            if (ch == 'Q' - 'A' + 1) // Ctrl+Q
                             {
                                 // if (MessageBoxW(NULL, L"确定要退出程序吗？", L"退出确认", MB_YESNO | MB_ICONQUESTION) == IDYES)
                                 {
@@ -493,9 +492,9 @@ int wmain(int argc, const WCHAR* args[])
                     std::cout << "\033[36mVersion: v1.0.1\033[0m" << std::endl;
                     std::cout << "\033[32mConsole encoding: " << (cfg.EncodingFormat == 0 ? "UTF-8" : "GBK") << "\033[0m" << std::endl;
                     std::cout << "\033[32mEcho mode: " << (cfg.EchoMode == 0 ? "Off" : "On") << "\033[0m" << std::endl;
-                    std::cout << "\033[33mPress Ctrl+A then Ctrl+C to toggle encoding format\033[0m" << std::endl;
-                    std::cout << "\033[33mPress Ctrl+A then Ctrl+E to toggle echo mode\033[0m" << std::endl;
-                    std::cout << "\033[33mPress Ctrl+A then Ctrl+X to exit\033[0m" << std::endl;
+                    std::cout << "\033[33mPress Ctrl+Q then Ctrl+C to toggle encoding format\033[0m" << std::endl;
+                    std::cout << "\033[33mPress Ctrl+Q then Ctrl+E to toggle echo mode\033[0m" << std::endl;
+                    std::cout << "\033[33mPress Ctrl+Q then Ctrl+Q to exit\033[0m" << std::endl;
 
                     // 运行工作循环，传递配置
                     DoWork(ioctx, serialPort, cfg);
