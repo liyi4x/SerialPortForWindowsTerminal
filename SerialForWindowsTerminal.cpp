@@ -28,6 +28,28 @@ bool g_isCtrlAPressed = false;
 bool g_shouldExit = false;
 std::vector<uint8_t> g_lineBuffer;
 
+// boost::system::error_code::message() 在 Windows 上返回系统 ANSI 代码页(CP_ACP)
+// 编码的文本，与当前控制台输出代码页（UTF-8 或 GBK，由用户切换）不一定一致，
+// 这里统一转换成当前控制台实际使用的代码页，避免乱码。
+static std::string FormatErrorMessage(const boost::system::error_code& ec)
+{
+    auto msg = ec.message();
+
+    int wlen = MultiByteToWideChar(CP_ACP, 0, msg.c_str(), -1, nullptr, 0);
+    std::wstring wmsg(wlen, L'\0');
+    MultiByteToWideChar(CP_ACP, 0, msg.c_str(), -1, &wmsg[0], wlen);
+
+    UINT targetCp = GetConsoleOutputCP();
+    int len = WideCharToMultiByte(targetCp, 0, wmsg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string result(len, '\0');
+    WideCharToMultiByte(targetCp, 0, wmsg.c_str(), -1, &result[0], len, nullptr, nullptr);
+
+    while (!result.empty() && (result.back() == '\0' || result.back() == '\r' || result.back() == '\n'))
+        result.pop_back();
+
+    return result;
+}
+
 using PortsArray = std::vector<std::pair<std::wstring, int>>;
 
 static PortsArray GetAllPorts(void)
@@ -266,7 +288,7 @@ static void DoStreamToStream(TStream1& stream1, TStream2& stream2, std::vector<u
         {
             if (ec)
             {
-                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
             }
             else
             {
@@ -378,7 +400,7 @@ static void DoStreamToStream(TStream1& stream1, TStream2& stream2, std::vector<u
                         {
                             if (ec)
                             {
-                                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
                             }
                             else
                             {
@@ -474,20 +496,20 @@ int wmain(int argc, const WCHAR* args[])
             {
                 ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
                 std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
-                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
                 continue;
             }
             if (serialPort.assign(hPort, ec))
             {
                 ::CloseHandle(hPort);
                 std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
-                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
                 continue;
             }
             if (InitializeSerialPort(serialPort, cfg, ec))
             {
                 std::cerr << "\033[31m" << "can not initialize " << portName << "\033[0m" << std::endl;
-                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
                 continue;
             }
             else
