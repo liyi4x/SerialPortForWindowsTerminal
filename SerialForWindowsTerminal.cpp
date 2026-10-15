@@ -462,8 +462,24 @@ int wmain(int argc, const WCHAR* args[])
             ioctx.restart();
             auto cfg = ReadSerialConfig();
             auto portName = std::string("COM") + std::to_string(cfg.Serial);
-            if (serialPort.open(portName, ec))
+            // 不使用 boost::asio::serial_port::open()：它内部会用 GetCommState() 读到的
+            // （对尚未配置过的虚拟串口驱动，如 Exar/XR21V1414，可能是全零/非法的）DCB
+            // 直接回写 SetCommState()，触发 ERROR_INVALID_PARAMETER。改为自行 CreateFile
+            // 再 assign()，跳过这段有问题的默认 DCB 回写，交由下面的 InitializeSerialPort
+            // 显式设置全部参数。
+            auto devicePath = std::wstring(L"\\\\.\\COM") + std::to_wstring(cfg.Serial);
+            HANDLE hPort = ::CreateFileW(devicePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+                0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+            if (hPort == INVALID_HANDLE_VALUE)
             {
+                ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
+                std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
+                std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
+                continue;
+            }
+            if (serialPort.assign(hPort, ec))
+            {
+                ::CloseHandle(hPort);
                 std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
                 std::cerr << "\033[31m" << "error : " << ec.message() << "\033[0m" << std::endl;
                 continue;
