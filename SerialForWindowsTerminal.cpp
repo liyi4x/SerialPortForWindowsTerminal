@@ -217,6 +217,52 @@ static void ToggleEchoMode(SERIAL_CONFIG& cfg)
     WriteSerialConfig(cfg);
 }
 
+// 等价于 boost::asio::serial_port::open() 在 CreateFile 之后做的默认初始化。
+// 因为本程序自己 CreateFile + assign() 绕开了 open()，这两步必须手动补上：
+// 1) SetCommState 写入一组已知可用的 DCB 标志。其中 BaudRate 也要显式给一个
+//    有效值：XR21V1414 这类驱动在端口从未被配置过时 GetCommState 返回的
+//    BaudRate 为 0，原样回写会让 SetCommState 失败(ERROR_INVALID_PARAMETER)。
+//    fAbortOnError=FALSE 则保证串口线接触不良产生帧错误时不会中止读写。
+// 2) SetCommTimeouts。ReadIntervalTimeout=1 让挂起的异步读在收到第一字节后
+//    1ms 即完成并返回已有数据；不设置时驱动默认超时全为 0，读操作要等凑满
+//    整个缓冲区(本程序为 1024 字节)才返回，表现为数据显示严重滞后、要多输入
+//    一些内容后才集中刷新。
+static bool ApplyDefaultCommSettings(HANDLE hPort, DWORD baudRate, boost::system::error_code& ec)
+{
+    DCB dcb = {};
+    dcb.DCBlength = sizeof(dcb);
+    if (!::GetCommState(hPort, &dcb))
+    {
+        ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
+        return false;
+    }
+
+    dcb.fBinary = TRUE;          // Win32 只支持二进制模式
+    dcb.fDsrSensitivity = FALSE;
+    dcb.fNull = FALSE;           // 不忽略 NULL 字符
+    dcb.fAbortOnError = FALSE;   // 忽略帧错误，不中止读写
+    dcb.BaudRate = baudRate;
+    if (!::SetCommState(hPort, &dcb))
+    {
+        ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
+        return false;
+    }
+
+    COMMTIMEOUTS timeouts = {};
+    timeouts.ReadIntervalTimeout = 1;
+    timeouts.ReadTotalTimeoutMultiplier = 0;
+    timeouts.ReadTotalTimeoutConstant = 0;
+    timeouts.WriteTotalTimeoutMultiplier = 0;
+    timeouts.WriteTotalTimeoutConstant = 0;
+    if (!::SetCommTimeouts(hPort, &timeouts))
+    {
+        ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
+        return false;
+    }
+
+    return true;
+}
+
 static boost::system::error_code InitializeSerialPort(boost::asio::serial_port& serialPort,const SERIAL_CONFIG& cfg, boost::system::error_code& ec)
 {
     serialPort.set_option(boost::asio::serial_port::baud_rate(cfg.BaudRate), ec);
@@ -484,9 +530,33 @@ int wmain(int argc, const WCHAR* args[])
             ioctx.restart();
             auto cfg = ReadSerialConfig();
             auto portName = std::string("COM") + std::to_string(cfg.Serial);
-            if (serialPort.open(portName, ec))
+            // 不使用 boost::asio::serial_port::open()：它内部会用 GetCommState() 读到的
+            // （对尚未配置过的虚拟串口驱动，如 Exar/XR21V1414，可能是全零/非法的）DCB
+            // 直接回写 SetCommState()，触发 ERROR_INVALID_PARAMETER。改为自行 CreateFile
+            // 再 assign()，跳过这段有问题的默认 DCB 回写，交由下面的 InitializeSerialPort
+            // 显式设置全部参数。
+            auto devicePath = std::wstring(L"\\\\.\\COM") + std::to_wstring(cfg.Serial);
+            HANDLE hPort = ::CreateFileW(devicePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+                0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+            if (hPort == INVALID_HANDLE_VALUE)
             {
                 ec = boost::system::error_code(::GetLastError(), boost::asio::error::get_system_category());
+                std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
+                continue;
+            }
+            // 补齐 boost::asio::serial_port::open() 内部在 CreateFile 之后
+            // 默认做的 DCB 标志和 COMMTIMEOUTS 设置
+            if (!ApplyDefaultCommSettings(hPort, cfg.BaudRate, ec))
+            {
+                ::CloseHandle(hPort);
+                std::cerr << "\033[31m" << "can not initialize " << portName << "\033[0m" << std::endl;
+                std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
+                continue;
+            }
+            if (serialPort.assign(hPort, ec))
+            {
+                ::CloseHandle(hPort);
                 std::cerr << "\033[31m" << "can not open " << portName << "\033[0m" <<std::endl;
                 std::cerr << "\033[31m" << "error : " << FormatErrorMessage(ec) << "\033[0m" << std::endl;
                 continue;
